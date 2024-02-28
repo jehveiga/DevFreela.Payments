@@ -11,6 +11,7 @@ namespace DevFreela.Payments.API.Consumers
     public class ProcessPaymentConsumer : BackgroundService
     {
         private const string QUEUE_NAME = "Payments";
+        private const string PYAMENT_APPROVED_QUEUE = "PaymentsApproved";
         private readonly IConnection _connection;
         private readonly IModel _channel;
         private readonly IServiceProvider _serviceProvider;
@@ -28,9 +29,17 @@ namespace DevFreela.Payments.API.Consumers
             _connection = factory.CreateConnection();
             _channel = _connection.CreateModel();
 
-            // Garantir que a fila esteja criada
+            // Fila responsável pelo recebimento de dados do pagamento que será efetuado
             _channel.QueueDeclare(
                 queue: QUEUE_NAME,
+                durable: false,
+                exclusive: false,
+                autoDelete: false,
+                arguments: null);
+
+            // Fila responsável pelo processamento das mensagens quando o apagamento foi aprovado que será repassado a aplicação que chamou o micro-service
+            _channel.QueueDeclare(
+                queue: PYAMENT_APPROVED_QUEUE,
                 durable: false,
                 exclusive: false,
                 autoDelete: false,
@@ -54,6 +63,21 @@ namespace DevFreela.Payments.API.Consumers
                 var paymentInfo = JsonSerializer.Deserialize<PaymentInfoInputModel>(paymentInfoJson) ?? new PaymentInfoInputModel();
 
                 ProcessPayment(paymentInfo);
+
+                // Objeto que será usado para envio dos dados do projecto que foi aprovado o pagamento
+                var paymentApproved = new PaymentApprovedIntegrationEvent(paymentInfo.IdProject);
+                // Serialização do objeto para Json
+                var paymentApprovedJson = JsonSerializer.Serialize(paymentApproved);
+                // Serialização do Json para Array de bytes
+                var paymentApprovedBytes = Encoding.UTF8.GetBytes(paymentApprovedJson);
+
+                // Método que será utilizado para publicar o envio de mensagem de aprovação de pagamento para fila PYAMENT_APPROVED_QUEUE criada
+                _channel.BasicPublish(
+                    exchange: "",
+                    routingKey: PYAMENT_APPROVED_QUEUE,
+                    basicProperties: null,
+                    body: paymentApprovedBytes);
+
 
                 // Informando ao Message Broker que a mensagem foi recebida, marcando como lida
                 _channel.BasicAck(eventArgs.DeliveryTag, false);
