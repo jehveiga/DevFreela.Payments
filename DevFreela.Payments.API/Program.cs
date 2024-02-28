@@ -1,9 +1,13 @@
+using DevFreela.Payments.API.Consumers;
 using DevFreela.Payments.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddScoped<IPaymentService, PaymentService>();
+
+// Serviço que será usado para ficar rodando para consumir o serviço de mensageria do RabbitMQ
+builder.Services.AddHostedService<ProcessPaymentConsumer>();
 
 builder.Services.AddControllers();
 
